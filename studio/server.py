@@ -5,6 +5,7 @@ Everything under /api, /media and /oauth needs a session, except /api/auth/* and
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import shutil
