@@ -2165,7 +2165,7 @@ async function openTranscript(jid) {
     el.addEventListener("click", e => { if (e.target === el) el.close(); });
     document.body.append(el); return el;
   })();
-  dlg.innerHTML = '<div class="dlg" style="width:min(900px,90vw);max-height:85vh"><div class="row" style="justify-content:space-between"><div><h2>Transcript</h2><p class="help" id="transcript_meta">Loading timestamped words…</p></div><button class="btn icon ghost" data-act="transcript-close" aria-label="Close">×</button></div><input id="transcript_search" type="search" placeholder="Search transcript…" autocomplete="off"><div class="two"><label class="f">Start (seconds)<input id="transcript_start" type="number" min="0" step="0.1"></label><label class="f">End (seconds)<input id="transcript_end" type="number" min="0" step="0.1"></label></div><div id="transcript_rows" style="overflow:auto;max-height:48vh;border:1px solid var(--line);border-radius:10px;padding:8px"></div><p class="help">Select a transcript line to fill the start and end times. You can adjust either time manually.</p></div>';
+  dlg.innerHTML = '<div class="dlg" style="width:min(900px,90vw);max-height:85vh"><div class="row" style="justify-content:space-between"><div><h2>Transcript</h2><p class="help" id="transcript_meta">Loading timestamped words…</p></div><button class="btn icon ghost" data-act="transcript-close" aria-label="Close">×</button></div><input id="transcript_search" type="search" placeholder="Search transcript…" autocomplete="off"><div class="two"><label class="f">Start (seconds)<input id="transcript_start" type="number" min="0" step="0.1"></label><label class="f">End (seconds)<input id="transcript_end" type="number" min="0" step="0.1"></label></div><div id="transcript_rows" style="overflow:auto;max-height:48vh;border:1px solid var(--line);border-radius:10px;padding:8px"></div><p class="help">Select a transcript line to fill the start and end times. You can adjust either time manually. Manual clips are 3–180 seconds; captions are off by default to avoid AI usage.</p><div class="dlg-foot"><button class="btn" data-act="transcript-close">Close</button><button class="btn primary" data-act="transcript-make">Create clip from range</button></div></div>';
   dlg.showModal();
   try {
     const data = await api(`/api/jobs/${encodeURIComponent(jid)}/transcript`);
@@ -2353,6 +2353,16 @@ document.addEventListener("click", async e => {
     if (a === "openclip") return openClip(d.j, d.c);
     if (a === "transcript") return openTranscript(d.j);
     if (a === "transcript-close") return $("#transcriptdlg").close();
+    if (a === "transcript-make") {
+      const start = Number($("#transcript_start").value), end = Number($("#transcript_end").value);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return toast("Enter valid start and end times.", "bad");
+      const b = e.target.closest("[data-act]"); if (b) b.disabled = true;
+      try {
+        await send(`/api/jobs/${encodeURIComponent(transcriptState.job.id)}/clips/manual`, {start, end});
+        $("#transcriptdlg").close(); await tick(); toast("Manual clip queued for rendering.", "ok");
+      } catch (err) { if (b) b.disabled = false; throw err; }
+      return;
+    }
     if (a === "transcript-range") {
       $("#transcript_start").value = Number(d.start).toFixed(2);
       $("#transcript_end").value = Number(d.end).toFixed(2);
