@@ -716,6 +716,18 @@ def get_transcript(jid: str):
             "source": job.get("transcript_from") or "local"}
 
 
+@app.post("/api/jobs/{jid}/clips/manual")
+def create_manual_clip(jid: str, body: dict = Body(...)):
+    job = _job_or_404(jid)
+    if job.get("status") != "done" or job.get("kind") == "live":
+        raise HTTPException(409, "Wait until this video has finished processing before making a manual clip.")
+    _throttle("manualclip:" + ctx.uid(), 12, 600, "Please wait a moment before creating another manual clip.")
+    try:
+        jobs.create_manual_clip(jid, body.get("start"), body.get("end"))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    return jobs.public(job)
+
 @app.get("/api/preview")
 def link_preview(request: Request, url: str = ""):
     url = url.strip()[:500]
