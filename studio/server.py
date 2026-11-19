@@ -685,6 +685,36 @@ def get_job(jid: str):
     return jobs.public(_job_or_404(jid))
 
 
+@app.get("/api/jobs/{jid}/transcript")
+def get_transcript(jid: str):
+    """Return the locally saved, timestamped transcript for this user's completed video."""
+    job = _job_or_404(jid)
+    if job.get("status") != "done" or job.get("kind") == "live":
+        raise HTTPException(409, "Wait until the video has finished processing before opening its transcript.")
+    path = jobs.job_dir(jid) / "words.json"
+    if not path.is_file():
+        raise HTTPException(404, "No transcript is available for this video.")
+    try:
+        words = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(500, "The saved transcript could not be read.")
+    if not isinstance(words, list):
+        raise HTTPException(500, "The saved transcript is not in a valid format.")
+    clean = []
+    for w in words:
+        if not isinstance(w, dict) or not isinstance(w.get("w"), str):
+            continue
+        try:
+            start, end = float(w["s"]), float(w["e"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (math.isfinite(start) and math.isfinite(end) and 0 <= start <= end):
+            continue
+        clean.append({"w": w["w"][:200], "s": round(start, 2), "e": round(end, 2)})
+    return {"words": clean, "duration": job.get("duration") or 0,
+            "source": job.get("transcript_from") or "local"}
+
+
 @app.get("/api/preview")
 def link_preview(request: Request, url: str = ""):
     url = url.strip()[:500]
