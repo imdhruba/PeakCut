@@ -359,9 +359,11 @@ def create_manual_clip(jid, start, end):
     if duration <= 0 or end > duration:
         raise ValueError("The selected end time is beyond this video's duration.")
     clips = job.setdefault("clips", [])
-    cid = f"clip{len(clips) + 1:02d}"
-    while any(c.get("id") == cid for c in clips):
-        cid = f"clip{len(clips) + 2:02d}"
+    next_number = len(clips) + 1
+    existing_ids = {c.get("id") for c in clips}
+    while f"clip{next_number:02d}" in existing_ids:
+        next_number += 1
+    cid = f"clip{next_number:02d}"
     options = job.get("options") or {}
     clip = {
         "id": cid, "start": round(start, 2), "end": round(end, 2),
