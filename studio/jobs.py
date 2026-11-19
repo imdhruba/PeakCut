@@ -342,6 +342,43 @@ def delete(jid):
     return bool(job)
 
 
+def create_manual_clip(jid, start, end):
+    """Queue a user-selected time range as a clip, without AI highlight discovery."""
+    job = _jobs[jid]
+    if job.get("status") != "done" or job.get("kind") == "live":
+        raise ValueError("Wait until this video has finished processing before making a manual clip.")
+    try:
+        start, end = float(start), float(end)
+    except (TypeError, ValueError):
+        raise ValueError("Enter valid start and end times.")
+    duration = float(job.get("duration") or 0)
+    if not (math.isfinite(start) and math.isfinite(end)) or start < 0 or end <= start:
+        raise ValueError("Those timestamps are not valid.")
+    if end - start < 3 or end - start > 180:
+        raise ValueError("A manual clip must be between 3 and 180 seconds long.")
+    if duration <= 0 or end > duration:
+        raise ValueError("The selected end time is beyond this video's duration.")
+    clips = job.setdefault("clips", [])
+    next_number = len(clips) + 1
+    existing_ids = {c.get("id") for c in clips}
+    while f"clip{next_number:02d}" in existing_ids:
+        next_number += 1
+    cid = f"clip{next_number:02d}"
+    options = job.get("options") or {}
+    clip = {
+        "id": cid, "start": round(start, 2), "end": round(end, 2),
+        "score": 0, "category": "other", "hook": "",
+        "title": "Manual clip", "description": "Clip created from the transcript.",
+        "hashtags": [], "highlight_words": [], "reason": "Selected manually from transcript.",
+        "style": options.get("style", DEFAULTS["style"]),
+        "layout": options.get("layout", DEFAULTS["layout"]),
+        "captions": False, "status": "queued", "version": 0,
+    }
+    clips.append(clip)
+    save(job)
+    _q.put(("clip", jid, cid), user=job["user"])
+    return clip
+
 def request_render(jid, cid, changes: dict):
     job = _jobs[jid]
     clip = next(c for c in job["clips"] if c["id"] == cid)

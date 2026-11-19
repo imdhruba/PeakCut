@@ -1738,6 +1738,7 @@ function jobHtml(j) {
   return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
       <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? "" : `
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
+        ${j.status === "done" && j.kind !== "live" ? `<button class="btn sm" data-act="transcript" data-j="${j.id}" title="Open searchable transcript">${ic("film")}Transcript</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
         <label class="selck" title="Select this video and its clips"><input type="checkbox" data-sel="j:${j.id}" ${sel().has("j:" + j.id) ? "checked" : ""} aria-label="Select this video"></label>`}</div></div>
     ${busy ? `<div class="bar"><i style="width:${Math.round(j.progress * 100)}%"></i></div><p class="sub">${esc(j.stage)} · ${Math.round(j.progress * 100)}%</p>` : ""}
@@ -2128,6 +2129,56 @@ async function drawSettings() {
 async function saveSettings() { const d = {}; $$("#sform [data-s]").forEach(i => d[i.dataset.s] = i.value); await send("/api/settings", d, "PUT"); }
 
 /* ============================================================ clip editor */
+
+let transcriptState = {job:null, words:[], rows:[]};
+function transcriptTime(sec) {
+  sec = Math.max(0, Math.floor(Number(sec) || 0));
+  return String(Math.floor(sec / 3600)).padStart(2, "0") + ":" +
+    String(Math.floor(sec % 3600 / 60)).padStart(2, "0") + ":" +
+    String(sec % 60).padStart(2, "0");
+}
+function transcriptRows(words) {
+  const rows = []; let group = [];
+  for (const w of words) {
+    group.push(w);
+    if (/[.!?]$/.test(w.w) || w.s - group[0].s >= 8) {
+      rows.push({start:group[0].s,end:group[group.length-1].e,text:group.map(x=>x.w).join(" ")});
+      group = [];
+    }
+  }
+  if (group.length) rows.push({start:group[0].s,end:group[group.length-1].e,text:group.map(x=>x.w).join(" ")});
+  return rows;
+}
+function drawTranscriptRows(query="") {
+  const box = $("#transcript_rows"); if (!box) return;
+  const q = query.trim().toLowerCase();
+  const rows = transcriptState.rows.filter(x => !q || x.text.toLowerCase().includes(q));
+  box.innerHTML = rows.slice(0, 1200).map((x,i) => `<button class="transcript-line" style="display:flex;width:100%;gap:12px;text-align:left;padding:8px;border:0;border-bottom:1px solid var(--line);background:transparent;color:inherit;cursor:pointer" type="button" data-act="transcript-range" data-start="${x.start}" data-end="${x.end}">
+    <time>${transcriptTime(x.start)}</time><span>${esc(x.text)}</span></button>`).join("") ||
+    '<p class="help">No matching transcript text.</p>';
+  if (rows.length > 1200) box.insertAdjacentHTML("beforeend", '<p class="help">Showing the first 1,200 matching lines. Refine your search to see more.</p>');
+}
+async function openTranscript(jid) {
+  const job = jobOf(jid); if (!job) return;
+  const dlg = document.getElementById("transcriptdlg") || (() => {
+    const el = document.createElement("dialog"); el.id = "transcriptdlg"; el.className = "formdlg";
+    el.addEventListener("click", e => { if (e.target === el) el.close(); });
+    document.body.append(el); return el;
+  })();
+  dlg.innerHTML = '<div class="dlg" style="width:min(900px,90vw);max-height:85vh"><div class="row" style="justify-content:space-between"><div><h2>Transcript</h2><p class="help" id="transcript_meta">Loading timestamped words…</p></div><button class="btn icon ghost" data-act="transcript-close" aria-label="Close">×</button></div><input id="transcript_search" type="search" placeholder="Search transcript…" autocomplete="off"><div class="two"><label class="f">Start (seconds)<input id="transcript_start" type="number" min="0" step="0.1"></label><label class="f">End (seconds)<input id="transcript_end" type="number" min="0" step="0.1"></label></div><div id="transcript_rows" style="overflow:auto;max-height:48vh;border:1px solid var(--line);border-radius:10px;padding:8px"></div><p class="help">Select a transcript line to fill the start and end times. You can adjust either time manually. Manual clips are 3–180 seconds; captions are off by default to avoid AI usage.</p><div class="dlg-foot"><button class="btn" data-act="transcript-close">Close</button><button class="btn primary" data-act="transcript-make">Create clip from range</button></div></div>';
+  dlg.showModal();
+  try {
+    const data = await api(`/api/jobs/${encodeURIComponent(jid)}/transcript`);
+    transcriptState = {job, words:data.words || [], rows:transcriptRows(data.words || [])};
+    $("#transcript_meta").textContent = `${transcriptState.words.length.toLocaleString()} words · ${data.source === "youtube" ? "YouTube captions" : "local transcription"}`;
+    drawTranscriptRows();
+    $("#transcript_search").addEventListener("input", e => drawTranscriptRows(e.target.value));
+  } catch (err) {
+    $("#transcript_meta").textContent = err.message;
+    $("#transcript_rows").innerHTML = "";
+  }
+}
+
 function openClip(jid, cid) { D.jid = jid; D.cid = cid; D.sig = ""; drawClipDlg(true); $("#clipdlg").showModal(); }
 function drawClipDlg(full) {
   const j = jobOf(D.jid), c = j?.clips.find(x => x.id === D.cid), dlg = $("#clipdlg");
@@ -2300,6 +2351,23 @@ document.addEventListener("click", async e => {
     if (a === "addmore") { const u = $("#url"); return u && !u.value ? (u.focus(), toast("Paste another link, or drop a file anywhere on the box.")) : $("#file").click(); }
     if (a === "closedlg") return $("#clipdlg").close();
     if (a === "openclip") return openClip(d.j, d.c);
+    if (a === "transcript") return openTranscript(d.j);
+    if (a === "transcript-close") return $("#transcriptdlg").close();
+    if (a === "transcript-make") {
+      const start = Number($("#transcript_start").value), end = Number($("#transcript_end").value);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return toast("Enter valid start and end times.", "bad");
+      const b = e.target.closest("[data-act]"); if (b) b.disabled = true;
+      try {
+        await send(`/api/jobs/${encodeURIComponent(transcriptState.job.id)}/clips/manual`, {start, end});
+        $("#transcriptdlg").close(); await tick(); toast("Manual clip queued for rendering.", "ok");
+      } catch (err) { if (b) b.disabled = false; throw err; }
+      return;
+    }
+    if (a === "transcript-range") {
+      $("#transcript_start").value = Number(d.start).toFixed(2);
+      $("#transcript_end").value = Number(d.end).toFixed(2);
+      return;
+    }
     if (a === "newcreator") {
       const dlg = $("#formdlg");
       dlg.innerHTML = `<form method="dialog" class="dlg"><h2>New creator</h2><p class="help">Each creator gets their own workspace, folder, settings and accounts.</p>
