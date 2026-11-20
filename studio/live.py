@@ -572,7 +572,8 @@ class Session:
     def _add_clip(self, c):
         self.n += 1
         c.update(id=f"clip{self.n:03d}", style=self.settings["style"], layout=self.settings["layout"],
-                 captions=self.job["options"].get("captions", True), status="queued", version=0, made_at=time.time())
+                 captions=self.job["options"].get("captions", True), status="queued", version=0, made_at=time.time(),
+                 review_required=True)
         with self.lock:
             self.job["clips"].append(c)
         jobs.save(self.job)
@@ -609,7 +610,7 @@ class Session:
             lst.unlink(missing_ok=True)
         # Only the gameplay layout uses a webcam, and only once the clip's own file is written: the
         # webcam is looked for in it, once per stream.
-        if clip.get("layout") == "gameplay":
+        if clip.get("layout") in ("gameplay", "stacked"):
             if not self.facecam_checked:
                 self.facecam_box = self._find_facecam(src)
                 self.facecam_checked = True
@@ -621,6 +622,12 @@ class Session:
         clip.update(src=str(src), src_offset=round(offset, 2), src_end=round(offset + dur, 2))
         clip["start"] = max(clip["start"], clip["src_offset"])
         clip["end"] = min(clip["end"], clip["src_end"])
+        # Live moments are saved as reviewable drafts. The user explicitly creates the final
+        # clip from the card; no voice trigger or AI decision starts the final render.
+        if clip.get("review_required"):
+            clip.update(status="review", error=None)
+            jobs.save(self.job)
+            return
         jobs.render_one(self.job, clip, list(self.words))
 
     def _align(self, src, guess, dur):
