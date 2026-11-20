@@ -1696,6 +1696,7 @@ function clipHtml(j, c) {
         ${c.status === "done" ? `<a class="btn sm icon ghost" href="${m}${esc(c.file)}?download=1" title="Download" aria-label="Download">${ic("down")}</a>` : ""}
         <button class="btn sm icon ghost" data-act="copy" ${a} title="Copy post text" aria-label="Copy post text">${ic("copy")}</button>
         ${busyClip ? "" : `<button class="btn sm icon ghost" data-act="delclip" ${a} title="Delete this clip" aria-label="Delete this clip">${ic("trash")}</button>`}
+        ${c.status === "review" ? `<label class="f" style="max-width:190px;margin:0"><span class="sub">Layout</span><select class="review-layout" data-c="${esc(c.id)}">${opts(S.status.layouts, c.layout)}</select></label>` : ""}
         <span class="grow"></span>
         ${c.status === "review" ? `<button class="btn sm primary" data-act="createclip" ${a}>Create clip</button>` : ""}
         ${c.status === "done" ? `<button class="btn sm" data-act="openclip" ${a}>${ic("send")}Post</button>` : ""}
@@ -2480,7 +2481,8 @@ document.addEventListener("click", async e => {
     }
     if (a === "clipnow") { await send(`/api/live/${d.j}/clip`, {seconds:Number(d.s)}); return toast(`Preparing the last ${d.s} seconds for your review…`, "ok"); }
     if (a === "createclip") {
-      await send(`/api/jobs/${d.j}/clips/${d.c}/render`, {});
+      const layout = $(".review-layout").find(el => el.dataset.c === d.c)?.value;
+      await send(`/api/jobs/${d.j}/clips/${d.c}/render`, layout ? {layout} : {});
       await tick();
       return toast("Creating the clip you selected…", "ok");
     }
