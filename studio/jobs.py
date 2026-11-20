@@ -418,6 +418,16 @@ def render_one(job, clip, words):
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
+        # A live review card can change its layout after the recording was prepared.
+        # Detect the webcam in the saved clip itself at final-render time, so Stacked
+        # split still gets the facecam even when the live session started in another layout.
+        if clip.get("layout") in ("gameplay", "stacked") and not clip.get("facecam") and src.is_file():
+            try:
+                box = facecam.detect(src, ask=brain.look_for_facecam)
+                if box and box.get("conf") == "high":
+                    clip["facecam"] = [box["x"], box["y"], box["w"], box["h"]]
+            except Exception:  # noqa: BLE001 - no confident facecam means the normal crop fallback
+                pass
         local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
         near = _caption_words(job, clip, words, off) if clip.get("captions", True) else []
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
