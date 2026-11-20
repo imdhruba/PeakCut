@@ -110,6 +110,13 @@ try:
     check("without a webcam the game simply fills the screen",
           "scale=1080:1920" in render._filter("gameplay", 1920, None) and "overlay=" not in render._filter("gameplay", 1920, None), True)
     check("the layout is offered to the user", "gameplay" in render.LAYOUTS, True)
+    stacked = render._filter("stacked", 1920, [0, 0, 300, 170])
+    check("stacked layout uses two synchronized panels", "vstack=inputs=2" in stacked, True)
+    check("stacked layout crops the webcam for the top panel", "crop=300:170:0:0" in stacked, True)
+    check("stacked layout removes the webcam from the gameplay panel", "delogo=x=0:y=0:w=300:h=170" in stacked, True)
+    check("stacked layout falls back safely without a webcam",
+          "scale=1080:1920" in render._filter("stacked", 1920, None), True)
+    check("stacked layout is offered to the user", "stacked" in render.LAYOUTS, True)
     # the heading must not run under the webcam picture
     pip_h = 380 * 376 / 363
     check("the heading goes below the webcam picture", render._hook_y("gameplay", 300, [0, 0, 363, 376]) > 26 + pip_h, True)
